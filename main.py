@@ -6,23 +6,32 @@ import yt_dlp, requests
 app = FastAPI()
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_headers=["*"])
 HEADERS={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+TIKTOK_HEADERS={"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 14_4_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1","Referer":"https://www.tiktok.com/"}
 QUALITY={"low":"best[height<=360]/best","medium":"best[height<=720]/best","high":"best[height<=1080]/best"}
 def isyt(u):return"youtube.com"in u or"youtu.be"in u
+def istt(u):return"tiktok.com"in u
 def opts(u,f):
-    o={"quiet":True,"no_warnings":True,"http_headers":HEADERS,"socket_timeout":20,"format":f}
+    h=TIKTOK_HEADERS if istt(u) else HEADERS
+    o={"quiet":True,"no_warnings":True,"http_headers":h,"socket_timeout":20,"format":f}
     if isyt(u):o["extractor_args"]={"youtube":{"player_client":["android"]}}
+    if istt(u):o["extractor_args"]={"tiktok":{"webpage_download":True}}
     return o
 @app.get("/")
 def root():return{"status":"GrabSnap API running"}
 @app.get("/info")
 def info(url:str=Query(...)):
     try:
-        o={"quiet":True,"no_warnings":True,"http_headers":HEADERS,"socket_timeout":20}
+        h=TIKTOK_HEADERS if istt(url) else HEADERS
+        o={"quiet":True,"no_warnings":True,"http_headers":h,"socket_timeout":20}
         if isyt(url):o["extractor_args"]={"youtube":{"player_client":["android"]}}
+        if istt(url):o["extractor_args"]={"tiktok":{"webpage_download":True}}
         with yt_dlp.YoutubeDL(o) as y:
             d=y.extract_info(url,download=False)
             return{"title":d.get("title","Video"),"thumbnail":d.get("thumbnail",""),"platform":d.get("extractor_key","Unknown"),"duration":d.get("duration",0)}
-    except Exception as e:return JSONResponse(status_code=400,content={"error":str(e)})
+    except Exception as e:
+        msg=str(e)
+        if"blocked"in msg.lower() or"ip"in msg.lower():msg="TikTok has blocked this server IP. Try Instagram or YouTube instead."
+        return JSONResponse(status_code=400,content={"error":msg})
 @app.get("/download")
 def download(url:str=Query(...),quality:str="high",format:str="video"):
     try:
@@ -35,7 +44,11 @@ def download(url:str=Query(...),quality:str="high",format:str="video"):
             else:
                 fl=d.get("formats",[])
                 du=fl[-1]["url"]if fl else None
-            if not du:return JSONResponse(status_code=400,content={"error":"No URL"})
-        r=requests.get(du,stream=True,timeout=30,headers={"User-Agent":HEADERS["User-Agent"],"Referer":url})
+            if not du:return JSONResponse(status_code=400,content={"error":"No URL found"})
+        h=TIKTOK_HEADERS if istt(url) else {"User-Agent":HEADERS["User-Agent"],"Referer":url}
+        r=requests.get(du,stream=True,timeout=30,headers=h)
         return StreamingResponse(r.iter_content(chunk_size=1024*1024),media_type=m,headers={"Content-Disposition":'attachment; filename="{}"'.format(n),"Access-Control-Allow-Origin":"*"})
-    except Exception as e:return JSONResponse(status_code=400,content={"error":str(e)})
+    except Exception as e:
+        msg=str(e)
+        if"blocked"in msg.lower() or"ip"in msg.lower():msg="TikTok has blocked this server IP. Try Instagram or YouTube instead."
+        return JSONResponse(status_code=400,content={"error":msg})
