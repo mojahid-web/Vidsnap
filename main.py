@@ -23,9 +23,35 @@ QUALITY_MAP = {
     "high":   "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
 }
 
+def is_youtube(url: str) -> bool:
+    return "youtube.com" in url or "youtu.be" in url
+
+def get_ydl_opts(url: str, fmt: str) -> dict:
+    base = {
+        "quiet": True,
+        "no_warnings": True,
+        "http_headers": HEADERS,
+        "socket_timeout": 20,
+    }
+
+    if is_youtube(url):
+        base.update({
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "web"],
+                    "player_skip": ["webpage", "js"],
+                }
+            },
+            "format": fmt,
+        })
+    else:
+        base["format"] = fmt
+
+    return base
+
 @app.get("/")
 def root():
-    return {"status": "VidSnap API running", "version": "1.0"}
+    return {"status": "GrabSnap API running", "version": "2.0"}
 
 @app.get("/info")
 def get_info(url: str = Query(...)):
@@ -34,8 +60,17 @@ def get_info(url: str = Query(...)):
             "quiet": True,
             "no_warnings": True,
             "http_headers": HEADERS,
-            "socket_timeout": 15,
+            "socket_timeout": 20,
         }
+
+        if is_youtube(url):
+            opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["android", "web"],
+                    "player_skip": ["webpage", "js"],
+                }
+            }
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             return {
@@ -55,23 +90,15 @@ def download(
 ):
     try:
         if format == "audio":
-            opts = {
-                "format": "bestaudio/best",
-                "quiet": True,
-                "no_warnings": True,
-                "http_headers": HEADERS,
-            }
-            fname     = "audio.mp3"
+            fmt = "bestaudio/best"
+            fname = "audio.mp3"
             mediatype = "audio/mpeg"
         else:
-            opts = {
-                "format": QUALITY_MAP.get(quality, QUALITY_MAP["high"]),
-                "quiet": True,
-                "no_warnings": True,
-                "http_headers": HEADERS,
-            }
-            fname     = f"video_{quality}.mp4"
+            fmt = QUALITY_MAP.get(quality, QUALITY_MAP["high"])
+            fname = f"video_{quality}.mp4"
             mediatype = "video/mp4"
+
+        opts = get_ydl_opts(url, fmt)
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -105,6 +132,12 @@ def download(
             media_type=mediatype,
             headers={
                 "Content-Disposition": f'attachment; filename="{fname}"',
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
                 "Access-Control-Allow-Origin": "*",
             }
         )
