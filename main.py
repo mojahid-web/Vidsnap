@@ -170,3 +170,25 @@ def download(url: str = Query(...), quality: str = "high", format: str = "video"
         )
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
+@app.get("/test-invidious")
+async def test_invidious():
+    results = []
+    for instance in INVIDIOUS_INSTANCES:
+        try:
+            res = requests.get(
+                f"{instance}/api/v1/videos/dQw4w9WgXcQ",
+                timeout=8,
+                headers=HEADERS
+            )
+            results.append({
+                "instance": instance,
+                "status": res.status_code,
+                "working": res.status_code == 200
+            })
+        except Exception as e:
+            results.append({
+                "instance": instance,
+                "status": "failed",
+                "error": str(e)
+            })
+    return results
