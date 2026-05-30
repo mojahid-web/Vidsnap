@@ -13,7 +13,7 @@ def istt(u):return"tiktok.com"in u
 def opts(u,f):
     h=TIKTOK_HEADERS if istt(u) else HEADERS
     o={"quiet":True,"no_warnings":True,"http_headers":h,"socket_timeout":20,"format":f}
-    if isyt(u):o["extractor_args"]={"youtube":{"player_client":["android"]}}
+    if isyt(u):o["extractor_args"]={"youtube":{"player_client":["ios"]}}
     if istt(u):o["extractor_args"]={"tiktok":{"webpage_download":True}}
     return o
 @app.get("/")
@@ -23,14 +23,14 @@ def info(url:str=Query(...)):
     try:
         h=TIKTOK_HEADERS if istt(url) else HEADERS
         o={"quiet":True,"no_warnings":True,"http_headers":h,"socket_timeout":20}
-        if isyt(url):o["extractor_args"]={"youtube":{"player_client":["android"]}}
+        if isyt(url):o["extractor_args"]={"youtube":{"player_client":["ios"]}}
         if istt(url):o["extractor_args"]={"tiktok":{"webpage_download":True}}
         with yt_dlp.YoutubeDL(o) as y:
             d=y.extract_info(url,download=False)
             return{"title":d.get("title","Video"),"thumbnail":d.get("thumbnail",""),"platform":d.get("extractor_key","Unknown"),"duration":d.get("duration",0)}
     except Exception as e:
         msg=str(e)
-        if"blocked"in msg.lower() or"ip"in msg.lower():msg="TikTok has blocked this server IP. Try Instagram or YouTube instead."
+        if istt(url) and("blocked"in msg.lower() or"unable to extract"in msg.lower()):msg="TikTok has blocked this server IP. Try Instagram or YouTube instead."
         return JSONResponse(status_code=400,content={"error":msg})
 @app.get("/download")
 def download(url:str=Query(...),quality:str="high",format:str="video"):
@@ -50,5 +50,5 @@ def download(url:str=Query(...),quality:str="high",format:str="video"):
         return StreamingResponse(r.iter_content(chunk_size=1024*1024),media_type=m,headers={"Content-Disposition":'attachment; filename="{}"'.format(n),"Access-Control-Allow-Origin":"*"})
     except Exception as e:
         msg=str(e)
-        if"blocked"in msg.lower() or"ip"in msg.lower():msg="TikTok has blocked this server IP. Try Instagram or YouTube instead."
+        if istt(url) and("blocked"in msg.lower() or"unable to extract"in msg.lower()):msg="TikTok has blocked this server IP. Try Instagram or YouTube instead."
         return JSONResponse(status_code=400,content={"error":msg})
