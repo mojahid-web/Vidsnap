@@ -192,3 +192,30 @@ async def test_invidious():
                 "error": str(e)
             })
     return results
+    @app.get("/test-piped")
+async def test_piped():
+    instances = [
+        "https://pipedapi.kavin.rocks",
+        "https://pipedapi.adminforge.de",
+        "https://pipedapi.in.projectsegfau.lt",
+    ]
+    results = []
+    for instance in instances:
+        try:
+            res = requests.get(
+                f"{instance}/streams/dQw4w9WgXcQ",
+                timeout=8,
+                headers=HEADERS
+            )
+            results.append({
+                "instance": instance,
+                "status": res.status_code,
+                "working": res.status_code == 200
+            })
+        except Exception as e:
+            results.append({
+                "instance": instance,
+                "status": "failed",
+                "error": str(e)
+            })
+    return results
