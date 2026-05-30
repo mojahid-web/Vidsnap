@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
-import yt_dlp, requests, re, time
+import yt_dlp, requests, re, time, threading
 
 app = FastAPI()
 app.add_middleware(
@@ -40,12 +40,6 @@ def get_cached(key):
 def set_cache(key, data):
     video_cache[key] = (data, time.time())
 
-def is_instagram(u):
-    return "instagram.com" in u
-
-def is_facebook(u):
-    return "facebook.com" in u or "fb.watch" in u
-
 def get_headers(url):
     return TIKTOK_HEADERS if "tiktok.com" in url else HEADERS
 
@@ -60,6 +54,22 @@ def opts(url, f):
         "file_access_retries": 1,
         "fragment_retries": 1,
     }
+
+# yt-dlp pre-warm on startup
+@app.on_event("startup")
+async def startup_event():
+    def warm():
+        try:
+            with yt_dlp.YoutubeDL({
+                "quiet": True,
+                "no_warnings": True,
+                "socket_timeout": 5,
+                "extractor_retries": 0,
+            }) as y:
+                y.extract_info("https://www.instagram.com/p/test/", download=False)
+        except:
+            pass  # error expected — just warming up yt-dlp import
+    threading.Thread(target=warm, daemon=True).start()
 
 @app.get("/")
 def root():
@@ -77,6 +87,7 @@ def info(url: str = Query(...)):
             "no_warnings": True,
             "http_headers": get_headers(url),
             "socket_timeout": 10,
+            "format": "best[ext=mp4]/best",
             "extractor_retries": 1,
             "file_access_retries": 1,
             "fragment_retries": 1,
@@ -84,6 +95,19 @@ def info(url: str = Query(...)):
 
         with yt_dlp.YoutubeDL(o) as y:
             d = y.extract_info(url, download=False)
+
+            # Download URL ও cache করো — download button instant হবে
+            du = None
+            if "url" in d:
+                du = d["url"]
+            elif "requested_formats" in d:
+                du = d["requested_formats"][0]["url"]
+            elif d.get("formats"):
+                du = d["formats"][-1]["url"]
+
+            if du:
+                set_cache(f"dl:{url}:high:video", du)
+
             result = {
                 "title": d.get("title", "Video"),
                 "thumbnail": d.get("thumbnail", ""),
@@ -106,7 +130,6 @@ def download(url: str = Query(...), quality: str = "high", format: str = "video"
             n = f"video_{quality}.mp4"
             m = "video/mp4"
 
-        # Cache check for download URL
         cache_key = f"dl:{url}:{quality}:{format}"
         cached_url = get_cached(cache_key)
 
